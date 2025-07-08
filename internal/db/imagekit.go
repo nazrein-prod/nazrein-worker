@@ -1,0 +1,33 @@
+package db
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/imagekit-developer/imagekit-go"
+	"github.com/joho/godotenv"
+)
+
+func ConnectImageKit() (*imagekit.ImageKit, error) {
+	err := godotenv.Load()
+	if err != nil {
+		panic("Error loading .env file")
+	}
+	privateKey := os.Getenv("IMAGEKIT_PRIVATE_KEY")
+	publicKey := os.Getenv("IMAGEKIT_PUBLIC_KEY")
+	urlEndpoint := os.Getenv("IMAGEKIT_URL_ENDPOINT")
+
+	if privateKey == "" || publicKey == "" || urlEndpoint == "" {
+		fmt.Println("Missing required environment variables for ImageKit")
+		return nil, nil
+	}
+	ik := imagekit.NewFromParams(imagekit.NewParams{
+		PrivateKey:  privateKey,
+		PublicKey:   publicKey,
+		UrlEndpoint: urlEndpoint,
+	})
+
+	fmt.Println("ImageKit client created")
+
+	return ik, nil
+}
