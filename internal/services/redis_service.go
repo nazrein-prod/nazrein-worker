@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grvbrk/trackyt_worker/internal/config"
-	"github.com/grvbrk/trackyt_worker/internal/models"
+	"github.com/grvbrk/nazrein_worker/internal/config"
+	"github.com/grvbrk/nazrein_worker/internal/models"
 	"github.com/redis/go-redis/v9"
 )
 

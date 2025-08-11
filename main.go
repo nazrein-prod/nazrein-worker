@@ -1,18 +1,27 @@
 package main
 
 import (
-	"github.com/grvbrk/trackyt_worker/internal/app"
+	"github.com/grvbrk/nazrein_worker/internal/app"
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
+
+	err := godotenv.Load()
+	if err != nil {
+		panic("Error loading .env file")
+	}
 
 	worker, err := app.NewWorker()
 	if err != nil {
 		worker.Logger.Fatal("Error creating worker:", err)
 	}
 
-	defer worker.RedisClient.Close()
+	defer func() {
+		err = worker.RedisClient.Close()
+		worker.Logger.Println("Error closing redis client", err)
+	}()
 
 	// Create consumer group
 	err = worker.RedisService.CreateGroupAndStream()

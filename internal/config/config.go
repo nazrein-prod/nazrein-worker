@@ -24,13 +24,13 @@ func NewConfig() *Config {
 		Ctx:                  context.Background(),
 		MaxRetries:           3,
 		RetryKeyPrefix:       "retry:msgid:",
-		DeadLetterStreamName: "trackyt:dead",
+		DeadLetterStreamName: "nazrein:dead",
 		ImageEtagPrefix:      "img_etag:",
 		ImageEtagTTL:         24 * time.Hour,
-		StreamName:           "trackyt",
+		StreamName:           "nazrein",
 		GroupName:            "group1",
 		ConsumerID:           "consumer1",
 		BatchSize:            50,
-		BlockTime:            10 * time.Second,
+		BlockTime:            30 * time.Second,
 	}
 }

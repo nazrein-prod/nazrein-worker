@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/grvbrk/trackyt_worker/internal/config"
-	"github.com/grvbrk/trackyt_worker/internal/db"
-	"github.com/grvbrk/trackyt_worker/internal/models"
-	"github.com/grvbrk/trackyt_worker/internal/services"
-	"github.com/grvbrk/trackyt_worker/internal/utils"
+	"github.com/grvbrk/nazrein_worker/internal/config"
+	"github.com/grvbrk/nazrein_worker/internal/db"
+	"github.com/grvbrk/nazrein_worker/internal/models"
+	"github.com/grvbrk/nazrein_worker/internal/services"
+	"github.com/grvbrk/nazrein_worker/internal/utils"
 	"github.com/imagekit-developer/imagekit-go"
 	"github.com/redis/go-redis/v9"
 )
@@ -221,7 +221,7 @@ func (w *Worker) ShouldInsertSnapshot(videoID string, newVideo *models.OembedYTV
 
 	newTitleHash := utils.HashString(newVideo.Title)
 
-	// Check image etag with previoud image etag from redis
+	// Check image etag with previous image etag from redis
 	imageChanged, imageEtag, err := w.checkImageChange(videoID, newVideo.ThumbnailURL)
 	if err != nil {
 		return false, 0, "", fmt.Errorf("failed to check image change: %w", err)

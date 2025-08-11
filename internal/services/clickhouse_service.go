@@ -5,8 +5,8 @@ import (
 	"log"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/grvbrk/trackyt_worker/internal/config"
-	"github.com/grvbrk/trackyt_worker/internal/models"
+	"github.com/grvbrk/nazrein_worker/internal/config"
+	"github.com/grvbrk/nazrein_worker/internal/models"
 )
 
 type ClickhouseService struct {
@@ -29,7 +29,11 @@ func (cs *ClickhouseService) InsertVideos(videos []models.ClickhouseVideo) error
 	if err != nil {
 		return fmt.Errorf("error preparing ClickHouse batch: %w", err)
 	}
-	defer batch.Close()
+
+	defer func() {
+		err := batch.Close()
+		cs.Logger.Println("Error closing redis client", err)
+	}()
 
 	for _, video := range videos {
 		err = batch.Append(video.VideoID, video.YoutubeID, video.SnapshotTime, video.Title, video.ImageSrc, video.Link, video.TitleHash, video.ImageEtag, video.ImageFileID, video.ImageFilename, video.ImageURL, video.ImageThumbnailURL, video.ImageHeight, video.ImageWidth, video.ImageSize, video.ImageFilepath, video.CreatedAt)

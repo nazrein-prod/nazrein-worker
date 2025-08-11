@@ -1,4 +1,4 @@
-module github.com/grvbrk/trackyt_worker
+module github.com/grvbrk/nazrein_worker
 
 go 1.23.3
 

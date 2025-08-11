@@ -5,14 +5,10 @@ import (
 	"os"
 
 	"github.com/imagekit-developer/imagekit-go"
-	"github.com/joho/godotenv"
 )
 
 func ConnectImageKit() (*imagekit.ImageKit, error) {
-	err := godotenv.Load()
-	if err != nil {
-		panic("Error loading .env file")
-	}
+
 	privateKey := os.Getenv("IMAGEKIT_PRIVATE_KEY")
 	publicKey := os.Getenv("IMAGEKIT_PUBLIC_KEY")
 	urlEndpoint := os.Getenv("IMAGEKIT_URL_ENDPOINT")

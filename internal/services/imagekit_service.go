@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grvbrk/trackyt_worker/internal/config"
+	"github.com/grvbrk/nazrein_worker/internal/config"
 	"github.com/imagekit-developer/imagekit-go"
 	"github.com/imagekit-developer/imagekit-go/api/uploader"
 )

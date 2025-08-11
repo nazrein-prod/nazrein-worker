@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/grvbrk/trackyt_worker/internal/config"
-	"github.com/grvbrk/trackyt_worker/internal/models"
+	"github.com/grvbrk/nazrein_worker/internal/config"
+	"github.com/grvbrk/nazrein_worker/internal/models"
 )
 
 type YoutubeService struct {
@@ -35,7 +35,11 @@ func (ys *YoutubeService) GetVideoDetails(videoURL string) (*models.OembedYTVide
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch video details: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err := resp.Body.Close()
+		ys.Logger.Println("Error closing redis client", err)
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("YouTube oEmbed API returned status %d", resp.StatusCode)
@@ -55,13 +59,17 @@ func (ys *YoutubeService) DownloadAndMD5HashImage(imageURL string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("failed to download image: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err := resp.Body.Close()
+		ys.Logger.Println("Error closing redis client", err)
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("image download returned status %d", resp.StatusCode)
 	}
 
-	// Stream hash computation - memory efficient for large images
+	// Stream hash computation -> memory efficient for large images
 	hasher := md5.New()
 	_, err = io.Copy(hasher, resp.Body)
 	if err != nil {
@@ -76,7 +84,11 @@ func (ys *YoutubeService) GetImageEtag(imageURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get image etag: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err := resp.Body.Close()
+		ys.Logger.Println("Error closing redis client", err)
+	}()
 
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
