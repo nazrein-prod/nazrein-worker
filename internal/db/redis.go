@@ -8,7 +8,17 @@ import (
 )
 
 func ConnectRedis() (*redis.Client, error) {
-	opt, _ := redis.ParseURL(os.Getenv("UPSTASH_REDIS_URL"))
+
+	url := os.Getenv("UPSTASH_REDIS_URL")
+	if url == "" {
+		return nil, fmt.Errorf("UPSTASH_REDIS_URL is not set")
+	}
+
+	opt, err := redis.ParseURL(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse redis url: %w", err)
+	}
+
 	client := redis.NewClient(opt)
 	fmt.Println("Connected to Redis...")
 	return client, nil

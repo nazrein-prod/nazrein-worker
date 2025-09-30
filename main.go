@@ -2,16 +2,16 @@ package main
 
 import (
 	"github.com/grvbrk/nazrein_worker/internal/app"
-	"github.com/joho/godotenv"
+	// "github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
 
-	err := godotenv.Load()
-	if err != nil {
-		panic("Error loading .env file")
-	}
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	panic("Error loading .env file")
+	// }
 
 	worker, err := app.NewWorker()
 	if err != nil {
@@ -19,8 +19,9 @@ func main() {
 	}
 
 	defer func() {
-		err = worker.RedisClient.Close()
-		worker.Logger.Println("Error closing redis client", err)
+		if err := worker.RedisClient.Close(); err != nil {
+			worker.Logger.Println("Error closing redis client", err)
+		}
 	}()
 
 	// Create consumer group
