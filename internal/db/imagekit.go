@@ -15,7 +15,7 @@ func ConnectImageKit() (*imagekit.ImageKit, error) {
 
 	if privateKey == "" || publicKey == "" || urlEndpoint == "" {
 		fmt.Println("Missing required environment variables for ImageKit")
-		return nil, nil
+		return nil, fmt.Errorf("missing required environment variables for ImageKit")
 	}
 	ik := imagekit.NewFromParams(imagekit.NewParams{
 		PrivateKey:  privateKey,
