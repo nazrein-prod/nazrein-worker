@@ -31,8 +31,9 @@ func (cs *ClickhouseService) InsertVideos(videos []models.ClickhouseVideo) error
 	}
 
 	defer func() {
-		err := batch.Close()
-		cs.Logger.Println("Error closing redis client", err)
+		if err := batch.Close(); err != nil {
+			cs.Logger.Println("Error closing clickhouse batch insert client", err)
+		}
 	}()
 
 	for _, video := range videos {

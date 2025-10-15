@@ -31,6 +31,6 @@ func NewConfig() *Config {
 		GroupName:            "group1",
 		ConsumerID:           "consumer1",
 		BatchSize:            50,
-		BlockTime:            30 * time.Second,
+		BlockTime:            1 * time.Minute,
 	}
 }

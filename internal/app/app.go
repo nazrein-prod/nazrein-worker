@@ -85,7 +85,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 	var failedContexts []models.MessageContext
 
 	for _, message := range messages {
-		w.Logger.Printf("Processing message ID: %s\n", message.ID)
+		// w.Logger.Printf("Processing message ID: %s\n", message.ID)
 
 		msgCtx := models.MessageContext{Message: message}
 
@@ -113,7 +113,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			continue
 		}
 
-		video, err := w.YoutubeService.GetVideoDetails(url)
+		newVideo, err := w.YoutubeService.GetVideoDetails(url)
 		if err != nil {
 			msgCtx.Error = err
 			failedContexts = append(failedContexts, msgCtx)
@@ -122,7 +122,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 		// titleHash, imageEtag should only be used when shouldInsert is true
 		// Kind of an anti pattern
-		shouldInsert, titleHash, imageEtag, err := w.ShouldInsertSnapshot(videoID, video)
+		shouldInsert, newTitleHash, newImageEtag, err := w.ShouldInsertSnapshot(videoID, newVideo)
 		if err != nil {
 			msgCtx.Error = fmt.Errorf("failed to check if snapshot needed: %w", err)
 			failedContexts = append(failedContexts, msgCtx)
@@ -147,7 +147,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 		// TODO: Avoid uploading image if it's not changed
 		// GOOGLE: Should we offload the storing of image part to another stream?
 		// GOOGLE: Also, what should we do if this fails?
-		imageData, err := w.ImagekitService.DownloadAndUploadImage(videoID, youtubeID, video.ThumbnailURL)
+		imageData, err := w.ImagekitService.DownloadAndUploadImage(videoID, youtubeID, newVideo.ThumbnailURL)
 		if err != nil {
 			msgCtx.Error = fmt.Errorf("failed to upload image to ImageKit: %w", err)
 			failedContexts = append(failedContexts, msgCtx)
@@ -158,11 +158,11 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			VideoID:           videoID,
 			YoutubeID:         youtubeID,
 			SnapshotTime:      time.Now(),
-			Title:             video.Title,
-			ImageSrc:          video.ThumbnailURL,
+			Title:             newVideo.Title,
+			ImageSrc:          newVideo.ThumbnailURL,
 			Link:              url,
-			TitleHash:         titleHash,
-			ImageEtag:         imageEtag,
+			TitleHash:         newTitleHash,
+			ImageEtag:         newImageEtag,
 			ImageFileID:       imageData.FileId,
 			ImageFilename:     imageData.Name,
 			ImageURL:          imageData.Url,
@@ -272,11 +272,13 @@ func (w *Worker) checkImageChange(videoID string, imageURL string) (bool, string
 		return false, "", fmt.Errorf("failed to get image MD5: %w", err)
 	}
 
+	// fmt.Printf("Current fetched Etag: %v\n", currentEtag)
+
 	// Check cached etag of the same image
 	cachedEtag, err := w.RedisClient.Get(w.Config.Ctx, cacheKey).Result()
 	if err == redis.Nil {
 		// First time - cache the etag
-		fmt.Println("First time fetching image etag - cache the etag")
+		// fmt.Printf("First time fetching image etag - cache the etag: %v", currentEtag)
 		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
 		if err != nil {
 			fmt.Printf("Warning: failed to cache etag for video %s: %v\n", videoID, err)
@@ -286,15 +288,15 @@ func (w *Worker) checkImageChange(videoID string, imageURL string) (bool, string
 		return false, "", fmt.Errorf("redis error: %w", err)
 	}
 
+	// fmt.Printf("Cached Etag: %v\n", cachedEtag)
 	imageChanged := currentEtag != cachedEtag
 
 	if imageChanged {
 		// Update cache with new etag
 		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
 		if err != nil {
-			fmt.Printf("Warning: failed to update cached MD5 for video %s: %v\n", videoID, err)
+			fmt.Printf("failed to update etag for video %s: %v\n", videoID, err)
 		}
-
 		return true, currentEtag, nil
 	}
 

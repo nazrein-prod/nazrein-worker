@@ -23,7 +23,7 @@ func ConnectImageKit() (*imagekit.ImageKit, error) {
 		UrlEndpoint: urlEndpoint,
 	})
 
-	fmt.Println("ImageKit client created")
+	fmt.Println("ImageKit client created...")
 
 	return ik, nil
 }

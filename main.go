@@ -2,16 +2,10 @@ package main
 
 import (
 	"github.com/grvbrk/nazrein_worker/internal/app"
-	// "github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-
-	// err := godotenv.Load()
-	// if err != nil {
-	// 	panic("Error loading .env file")
-	// }
 
 	worker, err := app.NewWorker()
 	if err != nil {
@@ -54,7 +48,7 @@ func main() {
 
 	// Code reaches here if there are no pending messages
 	for {
-		newRes, err := worker.RedisService.ReadNewMessages()
+		newRes, err := worker.RedisService.ReadNewMessages() // this blocks for config.Blocktime duration
 		if err == redis.Nil || len(newRes) == 0 || len(newRes[0].Messages) == 0 {
 			worker.Logger.Println("No new messages, waiting for new ones...")
 			continue

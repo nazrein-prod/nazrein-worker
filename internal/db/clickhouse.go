@@ -44,7 +44,7 @@ func ConnectClickhouse() (driver.Conn, error) {
 		if err == nil {
 			err = conn.Ping(ctx)
 			if err == nil {
-				fmt.Println("Connected to ClickHouse!")
+				fmt.Println("Connected to ClickHouse...")
 				return conn, nil
 			}
 		}

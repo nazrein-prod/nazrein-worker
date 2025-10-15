@@ -37,8 +37,9 @@ func (ys *YoutubeService) GetVideoDetails(videoURL string) (*models.OembedYTVide
 	}
 
 	defer func() {
-		err := resp.Body.Close()
-		ys.Logger.Println("Error closing redis client", err)
+		if err := resp.Body.Close(); err != nil {
+			ys.Logger.Printf("failed to close oEmbed response body: %v", err)
+		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
@@ -61,8 +62,9 @@ func (ys *YoutubeService) DownloadAndMD5HashImage(imageURL string) (string, erro
 	}
 
 	defer func() {
-		err := resp.Body.Close()
-		ys.Logger.Println("Error closing redis client", err)
+		if err := resp.Body.Close(); err != nil {
+			ys.Logger.Printf("failed to close imageurl (for md5) client: %v", err)
+		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
@@ -86,8 +88,9 @@ func (ys *YoutubeService) GetImageEtag(imageURL string) (string, error) {
 	}
 
 	defer func() {
-		err := resp.Body.Close()
-		ys.Logger.Println("Error closing redis client", err)
+		if err := resp.Body.Close(); err != nil {
+			ys.Logger.Printf("failed to close imageurl (for etag) client: %v", err)
+		}
 	}()
 
 	etag := resp.Header.Get("ETag")
