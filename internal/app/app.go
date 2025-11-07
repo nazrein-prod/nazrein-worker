@@ -279,7 +279,7 @@ func (w *Worker) checkImageChange(videoID string, imageURL string) (bool, string
 	if err == redis.Nil {
 		// First time - cache the etag
 		// fmt.Printf("First time fetching image etag - cache the etag: %v", currentEtag)
-		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
+		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, 0).Err()
 		if err != nil {
 			fmt.Printf("Warning: failed to cache etag for video %s: %v\n", videoID, err)
 		}
@@ -293,7 +293,7 @@ func (w *Worker) checkImageChange(videoID string, imageURL string) (bool, string
 
 	if imageChanged {
 		// Update cache with new etag
-		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
+		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, 0).Err()
 		if err != nil {
 			fmt.Printf("failed to update etag for video %s: %v\n", videoID, err)
 		}
