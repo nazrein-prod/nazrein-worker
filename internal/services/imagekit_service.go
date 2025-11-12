@@ -34,6 +34,7 @@ func (is *ImagekitService) DownloadAndUploadImage(videoID, youtubeID, imageURL s
 
 	uploadResp, err := is.ImageKitClient.Uploader.Upload(is.Config.Ctx, imageURL, uploader.UploadParam{
 		FileName: filename,
+		Folder:   "testing",
 	})
 
 	if err != nil {

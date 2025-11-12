@@ -78,12 +78,12 @@ func (rs *RedisService) GetRetryCount(messageID string) (int, error) {
 		return 0, nil
 	}
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("error getting retry count from redis: %w", err)
 	}
 
 	count, err := strconv.Atoi(val)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("error converting string count var to int: %w", err)
 	}
 
 	return count, nil

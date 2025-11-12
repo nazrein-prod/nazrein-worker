@@ -33,7 +33,7 @@ func (ys *YoutubeService) GetVideoDetails(videoURL string) (*models.OembedYTVide
 
 	resp, err := ys.HttpClient.Get(oembedURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch video details: %w", err)
+		return nil, fmt.Errorf("failed to fetch oEmbed video details: %w", err)
 	}
 
 	defer func() {
@@ -47,8 +47,9 @@ func (ys *YoutubeService) GetVideoDetails(videoURL string) (*models.OembedYTVide
 	}
 
 	var video models.OembedYTVideo
-	if err := json.NewDecoder(resp.Body).Decode(&video); err != nil {
-		return nil, fmt.Errorf("failed to decode oEmbed response: %w", err)
+	err = json.NewDecoder(resp.Body).Decode(&video)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode oEmbed response body: %w", err)
 	}
 
 	return &video, nil
