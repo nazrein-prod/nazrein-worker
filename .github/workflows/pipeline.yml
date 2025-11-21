@@ -79,25 +79,25 @@ jobs:
           provenance: false
           sbom: true
 
-  # deploy:
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 10
-  #   needs: push-to-dockerhub
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: push-to-dockerhub
 
-  #   steps:
-  #     - name: Join Tailscale network
-  #       uses: tailscale/github-action@v3
-  #       with:
-  #         oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-  #         oauth-secret: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
-  #         tags: tag:ci
-  #         version: latest
-  #         use-cache: "true"
+    steps:
+      - name: Join Tailscale network
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:cicd
+          version: latest
+          use-cache: "true"
 
-  #     - name: Deploy or update stack
-  #       run: |
-  #         ssh -o StrictHostKeyChecking=no deploy@nazrein << 'EOF'
-  #           set -e
-  #           cd /home/deploy
-  #           docker stack deploy -c docker-stack.yml nazrein
-  #         EOF
+      - name: Deploy or update stack
+        run: |
+          ssh -o StrictHostKeyChecking=no deploy@nazrein << 'EOF'
+            set -e
+            cd /home/deploy
+            docker stack deploy -c nazrein.prod.yml nazrein
+          EOF
