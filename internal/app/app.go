@@ -404,19 +404,10 @@ func (w *Worker) HandleImageChange(videoID string, oEmbedVideo *models.OembedYTV
 	`, videoID).Scan(&dbEtag)
 
 	if err != nil {
-		// Case 3: No dbtag -> First time insert -> cache redis and return the newEtag
-		if err.Error() == sql.ErrNoRows.Error() {
-			w.Logger.Printf("First snapshot for video %s — caching current ETag", videoID)
-			err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
-			if err != nil {
-				return "", fmt.Errorf("error caching ttl for a new image insert: %w", err)
-			}
-			return newEtag, nil
-		}
 		return "", fmt.Errorf("clickhouse etag query failed: %w", err)
 	}
 
-	// Case 4: Found in DB and is the same as the fetched Etag
+	// Case 3: Found in DB and is the same as the fetched Etag
 	// Means the redis cache expired
 	// Just update the redis cache
 	if dbEtag == newEtag {
@@ -428,7 +419,7 @@ func (w *Worker) HandleImageChange(videoID string, oEmbedVideo *models.OembedYTV
 		return "", nil
 	}
 
-	// Case 5: Different etag in db -> update cache and return the newEtag
+	// Case 4: Different etag in db -> update cache and return the newEtag
 	err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
 	if err != nil {
 		return "", fmt.Errorf("error refreshing ttl for different db etag: %w", err)
