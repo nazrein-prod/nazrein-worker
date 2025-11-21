@@ -39,8 +39,7 @@ func main() {
 	}
 
 	if len(messages) > 0 {
-		worker.Logger.Println("Processing pending messages...")
-		worker.Logger.Println("Found", len(messages), "pending messages")
+		worker.Logger.Printf("Processing %d pending message(s)...\n", len(messages))
 		worker.ProcessMessages(messages)
 	}
 
@@ -50,7 +49,6 @@ func main() {
 	for {
 		newRes, err := worker.RedisService.ReadNewMessages() // this blocks for config.Blocktime duration
 		if err == redis.Nil || len(newRes) == 0 || len(newRes[0].Messages) == 0 {
-			worker.Logger.Println("No new messages, waiting for new ones...")
 			continue
 		}
 		worker.ProcessMessages(newRes[0].Messages)

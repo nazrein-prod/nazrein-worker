@@ -50,7 +50,7 @@ func ConnectClickhouse() (driver.Conn, error) {
 		}
 
 		fmt.Printf("Attempt %d: ClickHouse not ready: %v\n", i, err)
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 
 	return nil, fmt.Errorf("could not connect to ClickHouse after multiple attempts: %w", err)

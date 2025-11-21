@@ -204,8 +204,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 			if newTitleHash == 0 {
 				// No changes (Image and title)
-				w.Logger.Printf("No changes detected for video %s, skipping insertion\n", youtubeID)
-				w.Logger.Println("Acking message since no changes detected")
+				w.Logger.Printf("Acking message since no changes detected for video %s\n", youtubeID)
 				err = w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, message.ID).Err()
 				if err != nil {
 					w.Logger.Printf("Failed to XACK message %s: %v\n", message.ID, err)
@@ -338,7 +337,6 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 		}
 
 		for _, msgID := range successfulMessageIDs {
-			w.Logger.Println("Acking message", msgID)
 			err := w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, msgID).Err()
 			if err != nil {
 				w.Logger.Printf("Failed to XACK message %s: %v\n", msgID, err)
