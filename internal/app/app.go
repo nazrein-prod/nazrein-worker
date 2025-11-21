@@ -124,6 +124,63 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			continue
 		}
 
+		exists, err := w.CheckFirstUpload(videoID, oEmbedVideo)
+		if err != nil {
+			msgCtx.Error = err
+			continue
+		}
+
+		if !exists {
+			cacheKey := w.Config.ImageEtagPrefix + videoID
+			newTitleHash := utils.HashString(oEmbedVideo.Title)
+			newEtag, err := w.YoutubeService.GetImageEtag(oEmbedVideo.ThumbnailURL)
+			if err != nil {
+				msgCtx.Error = err
+				continue
+			}
+
+			err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
+			if err != nil {
+				msgCtx.Error = err
+				continue
+			}
+
+			// TODO: Cache the title hash too
+
+			imageData, err := w.ImagekitService.DownloadAndUploadImage(videoID, youtubeID, oEmbedVideo.ThumbnailURL)
+			if err != nil {
+				msgCtx.Error = fmt.Errorf("failed to upload image to ImageKit: %w", err)
+				failedContexts = append(failedContexts, msgCtx)
+				continue
+			}
+
+			videoData := models.ClickhouseVideo{
+				VideoID:           videoID,
+				YoutubeID:         youtubeID,
+				SnapshotTime:      time.Now(),
+				Title:             oEmbedVideo.Title,
+				ImageSrc:          oEmbedVideo.ThumbnailURL,
+				Link:              url,
+				TitleHash:         newTitleHash,
+				ImageEtag:         newEtag,
+				ImageFileID:       imageData.FileId,
+				ImageFilename:     imageData.Name,
+				ImageURL:          imageData.Url,
+				ImageThumbnailURL: imageData.ThumbnailUrl,
+				ImageHeight:       imageData.Height,
+				ImageWidth:        imageData.Width,
+				ImageSize:         imageData.Size,
+				ImageFilepath:     imageData.FilePath,
+				CreatedAt:         time.Now(),
+			}
+
+			msgCtx.VideoData = &videoData
+			sucessfulVideos = append(sucessfulVideos, videoData)
+			successfulMessageIDs = append(successfulMessageIDs, message.ID)
+
+			continue
+		}
+
 		var newTitleHash uint64
 
 		newImageEtag, err := w.HandleImageChange(videoID, oEmbedVideo)
@@ -135,6 +192,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 		if newImageEtag == "" {
 			// Image didn't change
+			// Check for title changes
 			titleHash, err := w.DidTitleChange(videoID, oEmbedVideo)
 			if err != nil {
 				msgCtx.Error = err
@@ -159,7 +217,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 				continue
 			}
 
-			// Title changed
+			// Title changed, Image didn't
 			var chVideo models.ClickhouseVideo
 			row := w.ClickhouseClient.QueryRow(w.Config.Ctx, `
 				SELECT
@@ -239,8 +297,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			sucessfulVideos = append(sucessfulVideos, videoData)
 			continue
 		}
-
-		// Image changed
+		// Image and Title changed
 		imageData, err := w.ImagekitService.DownloadAndUploadImage(videoID, youtubeID, oEmbedVideo.ThumbnailURL)
 		if err != nil {
 			msgCtx.Error = fmt.Errorf("failed to upload image to ImageKit: %w", err)
@@ -311,25 +368,32 @@ func (w *Worker) HandleImageChange(videoID string, oEmbedVideo *models.OembedYTV
 		return "", fmt.Errorf("redis get etag failed: %w", err)
 	}
 
-	currentEtag, err := w.YoutubeService.GetImageEtag(oEmbedVideo.ThumbnailURL)
+	newEtag, err := w.YoutubeService.GetImageEtag(oEmbedVideo.ThumbnailURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to get image etag from thumbnail_url: %w", err)
 	}
 
 	// Case 1: Cache hit
 	if cachedEtag != "" {
-		if currentEtag == cachedEtag {
-			// Same image -> refresh TTL
-			_ = w.RedisClient.Expire(w.Config.Ctx, cacheKey, w.Config.ImageEtagTTL).Err()
+		// Same Etag -> Same image -> refresh TTL
+		if newEtag == cachedEtag {
+			err = w.RedisClient.Expire(w.Config.Ctx, cacheKey, w.Config.ImageEtagTTL).Err()
+			if err != nil {
+				return "", fmt.Errorf("error refreshing ttl for same image: %w", err)
+			}
 			return "", nil
 		}
 
-		// ETag changed -> update cache & db
-		_ = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
-		return currentEtag, nil
+		// ETag changed -> update cache
+		// Db updates will be batch handled in the processMessages function
+		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
+		if err != nil {
+			return "", fmt.Errorf("error refreshing ttl for different image: %w", err)
+		}
+		return newEtag, nil
 	}
 
-	// Case 2: Cache miss
+	// Case 2: Cache miss (cachedEtag == "")
 	var dbEtag string
 	err = w.ClickhouseClient.QueryRow(w.Config.Ctx, `
 		SELECT image_etag
@@ -340,24 +404,37 @@ func (w *Worker) HandleImageChange(videoID string, oEmbedVideo *models.OembedYTV
 	`, videoID).Scan(&dbEtag)
 
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		// Case 3: No dbtag -> First time insert -> cache redis and return the newEtag
+		if err.Error() == sql.ErrNoRows.Error() {
 			w.Logger.Printf("First snapshot for video %s — caching current ETag", videoID)
-			_ = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
-			return currentEtag, nil
+			err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
+			if err != nil {
+				return "", fmt.Errorf("error caching ttl for a new image insert: %w", err)
+			}
+			return newEtag, nil
 		}
-		return "", fmt.Errorf("db query failed: %w", err)
+		return "", fmt.Errorf("clickhouse etag query failed: %w", err)
 	}
 
-	// Case 3: Found in DB
-	if dbEtag == currentEtag {
+	// Case 4: Found in DB and is the same as the fetched Etag
+	// Means the redis cache expired
+	// Just update the redis cache
+	if dbEtag == newEtag {
 		// db and current etag same -> update cache
-		_ = w.RedisClient.Set(w.Config.Ctx, cacheKey, dbEtag, w.Config.ImageEtagTTL).Err()
+		err = w.RedisClient.Set(w.Config.Ctx, cacheKey, dbEtag, w.Config.ImageEtagTTL).Err()
+		if err != nil {
+			return "", fmt.Errorf("error refreshing ttl for the same db etag: %w", err)
+		}
 		return "", nil
 	}
 
-	// db and current etag different -> update cache and return true
-	_ = w.RedisClient.Set(w.Config.Ctx, cacheKey, currentEtag, w.Config.ImageEtagTTL).Err()
-	return currentEtag, nil
+	// Case 5: Different etag in db -> update cache and return the newEtag
+	err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
+	if err != nil {
+		return "", fmt.Errorf("error refreshing ttl for different db etag: %w", err)
+	}
+
+	return newEtag, nil
 }
 
 func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVideo) (uint64, error) {
@@ -374,11 +451,6 @@ func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVide
 	`, videoID).Scan(&lastTitleHash)
 
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
-			w.Logger.Printf("No previous snapshot found for video %s", videoID)
-			return newTitleHash, nil
-		}
-
 		return 0, fmt.Errorf("failed to query latest snapshot: %w", err)
 	}
 
@@ -389,4 +461,22 @@ func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVide
 	}
 
 	return 0, nil
+}
+
+func (w *Worker) CheckFirstUpload(videoID string, oEmbedVideo *models.OembedYTVideo) (bool, error) {
+
+	var exists bool
+	err := w.ClickhouseClient.QueryRow(w.Config.Ctx, `
+    SELECT EXISTS(
+        SELECT 1
+        FROM default.video_snapshots
+        WHERE video_id = ?
+    )
+`, videoID).Scan(&exists)
+
+	if err != nil {
+		return false, fmt.Errorf("error querying exists for video. Err: %w", err)
+	}
+
+	return exists, nil
 }
