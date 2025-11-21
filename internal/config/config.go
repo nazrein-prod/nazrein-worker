@@ -72,6 +72,6 @@ func NewConfig() *Config {
 		ConsumerID:           getEnv("REDIS_CONSUMER_ID", "consumer1"),
 		BatchSize:            batchSize,
 		BlockTime:            blockTime,
-		ImagekitFolder:       getEnv("IMAGEKIT_FOLDER", ""),
+		ImagekitFolder:       getEnv("IMAGEKIT_FOLDER", "/testing"),
 	}
 }
