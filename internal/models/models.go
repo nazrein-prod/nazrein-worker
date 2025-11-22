@@ -19,8 +19,8 @@ type ClickhouseVideo struct {
 	ImageFilename     string    `db:"image_filename"`
 	ImageURL          string    `db:"image_url"`
 	ImageThumbnailURL string    `db:"image_thumbnail_url"`
-	ImageHeight       int       `db:"image_height"`
-	ImageWidth        int       `db:"image_width"`
+	ImageHeight       int32     `db:"image_height"`
+	ImageWidth        int32     `db:"image_width"`
 	ImageSize         uint64    `db:"image_size"`
 	ImageFilepath     string    `db:"image_filepath"`
 	CreatedAt         time.Time `db:"created_at"`
