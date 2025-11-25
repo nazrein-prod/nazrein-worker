@@ -431,19 +431,21 @@ func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVide
 	newTitleHash := utils.HashString(oEmbedVideo.Title)
 
 	var lastTitleHash uint64
+	var title string
 	err := w.ClickhouseClient.QueryRow(w.Config.Ctx, `
-		SELECT title_hash
+		SELECT title, title_hash
 		FROM default.video_snapshots
 		WHERE video_id = ?
 		ORDER BY snapshot_time DESC
 		LIMIT 1
-	`, videoID).Scan(&lastTitleHash)
+	`, videoID).Scan(&title, &lastTitleHash)
 
 	if err != nil {
 		return 0, fmt.Errorf("failed to query latest snapshot: %w", err)
 	}
 
-	titleChanged := newTitleHash != lastTitleHash
+	titleChanged := newTitleHash != lastTitleHash && oEmbedVideo.Title != title
+	fmt.Println("Changed", titleChanged)
 	if titleChanged {
 		w.Logger.Printf("Title changed for video %s\n", videoID)
 		return newTitleHash, nil
