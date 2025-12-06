@@ -445,7 +445,6 @@ func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVide
 	}
 
 	titleChanged := newTitleHash != lastTitleHash && oEmbedVideo.Title != title
-	fmt.Println("Changed", titleChanged)
 	if titleChanged {
 		w.Logger.Printf("Title changed for video %s\n", videoID)
 		return newTitleHash, nil

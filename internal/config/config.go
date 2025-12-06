@@ -23,18 +23,20 @@ type Config struct {
 	ImagekitFolder       string
 }
 
-func getEnv(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+func getEnv(key string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("Env missing: %s", key)
 	}
-	return defaultVal
+
+	return val
 }
 
 func NewConfig() *Config {
-	maxRetriesStr := getEnv("MAX_RETRIES", "3")
-	imageEtagTTLStr := getEnv("IMAGE_ETAG_TTL", "24h")
-	batchSizeStr := getEnv("REDIS_BATCH_SIZE", "50")
-	blockTimeStr := getEnv("REDIS_STREAM_BLOCK_TIME", "1m")
+	maxRetriesStr := getEnv("MAX_RETRIES")
+	imageEtagTTLStr := getEnv("IMAGE_ETAG_TTL")
+	batchSizeStr := getEnv("REDIS_BATCH_SIZE")
+	blockTimeStr := getEnv("REDIS_STREAM_BLOCK_TIME")
 
 	maxRetries, err := strconv.Atoi(maxRetriesStr)
 	if err != nil {
@@ -63,15 +65,15 @@ func NewConfig() *Config {
 	return &Config{
 		Ctx:                  context.Background(),
 		MaxRetries:           maxRetries,
-		RetryKeyPrefix:       getEnv("REDIS_RETRY_KEY_PREFIX", "retry:msgid:"),
-		DeadLetterStreamName: getEnv("DEAD_LETTER_STREAM_NAME", "nazrein:dead"),
-		ImageEtagPrefix:      getEnv("IMAGE_ETAG_PREFIX", "img_etag:"),
+		RetryKeyPrefix:       getEnv("REDIS_RETRY_KEY_PREFIX"),
+		DeadLetterStreamName: getEnv("DEAD_LETTER_STREAM_NAME"),
+		ImageEtagPrefix:      getEnv("IMAGE_ETAG_PREFIX"),
 		ImageEtagTTL:         imageEtagTTL,
-		StreamName:           getEnv("REDIS_STREAM_NAME", "nazrein"),
-		GroupName:            getEnv("REDIS_GROUP_NAME", "group1"),
-		ConsumerID:           getEnv("REDIS_CONSUMER_ID", "consumer1"),
+		StreamName:           getEnv("REDIS_STREAM_NAME"),
+		GroupName:            getEnv("REDIS_GROUP_NAME"),
+		ConsumerID:           getEnv("REDIS_CONSUMER_ID"),
 		BatchSize:            batchSize,
 		BlockTime:            blockTime,
-		ImagekitFolder:       getEnv("IMAGEKIT_FOLDER", "/testing"),
+		ImagekitFolder:       getEnv("IMAGEKIT_FOLDER"),
 	}
 }
