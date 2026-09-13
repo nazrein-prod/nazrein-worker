@@ -5,6 +5,7 @@ go 1.23.3
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.37.2
 	github.com/imagekit-developer/imagekit-go v0.0.0-20240521071536-1d7e6e67fcd7
+	github.com/lmittmann/tint v1.2.0
 	github.com/redis/go-redis/v9 v9.10.0
 )
 

@@ -1,12 +1,7 @@
-name: nazrein worker
+name: CICD PROD Deployment
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   lint:

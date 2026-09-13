@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/grvbrk/nazrein_worker/internal/config"
@@ -10,12 +10,12 @@ import (
 )
 
 type ClickhouseService struct {
-	Logger           *log.Logger
+	Logger           *slog.Logger
 	Config           *config.Config
 	ClickhouseClient driver.Conn
 }
 
-func NewClickhouseService(logger *log.Logger, config *config.Config, clickhouseClient driver.Conn) *ClickhouseService {
+func NewClickhouseService(logger *slog.Logger, config *config.Config, clickhouseClient driver.Conn) *ClickhouseService {
 	return &ClickhouseService{
 		Logger:           logger,
 		Config:           config,
@@ -32,7 +32,7 @@ func (cs *ClickhouseService) InsertVideos(videos []models.ClickhouseVideo) error
 
 	defer func() {
 		if err := batch.Close(); err != nil {
-			cs.Logger.Println("Error closing clickhouse batch insert client", err)
+			cs.Logger.Warn("Error closing clickhouse batch insert client", "err", err)
 		}
 	}()
 

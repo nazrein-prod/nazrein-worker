@@ -3,14 +3,14 @@ package app
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/grvbrk/nazrein_worker/internal/config"
 	"github.com/grvbrk/nazrein_worker/internal/db"
+	applogger "github.com/grvbrk/nazrein_worker/internal/logger"
 	"github.com/grvbrk/nazrein_worker/internal/models"
 	"github.com/grvbrk/nazrein_worker/internal/services"
 	"github.com/grvbrk/nazrein_worker/internal/utils"
@@ -19,7 +19,7 @@ import (
 )
 
 type Worker struct {
-	Logger            *log.Logger
+	Logger            *slog.Logger
 	ImageKit          *imagekit.ImageKit
 	RedisClient       *redis.Client
 	ClickhouseClient  driver.Conn
@@ -32,24 +32,24 @@ type Worker struct {
 }
 
 func NewWorker() (*Worker, error) {
-	logger := log.New(os.Stdout, "LOGGING: ", log.Ldate|log.Ltime)
+	logger := applogger.New("worker")
 	config := config.NewConfig()
 
 	imageKitClient, err := db.ConnectImageKit()
 	if err != nil {
-		fmt.Println("Error connecting to ImageKit:", err)
+		logger.Error("Error connecting to ImageKit", "err", err)
 		return nil, err
 	}
 
 	redisClient, err := db.ConnectRedis()
 	if err != nil {
-		fmt.Println("Error connecting to Redis:", err)
+		logger.Error("Error connecting to Redis", "err", err)
 		return nil, err
 	}
 
 	chConn, err := db.ConnectClickhouse()
 	if err != nil {
-		fmt.Println("Error connecting to Clickhouse:", err)
+		logger.Error("Error connecting to Clickhouse", "err", err)
 		return nil, err
 	}
 
@@ -81,7 +81,7 @@ func NewWorker() (*Worker, error) {
 func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 	var sucessfulVideos []models.ClickhouseVideo
-	var successfulMessageIDs []string
+	var successfulContexts []models.MessageContext
 	var failedContexts []models.MessageContext
 
 	for _, message := range messages {
@@ -127,6 +127,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 		exists, err := w.CheckFirstUpload(videoID, oEmbedVideo)
 		if err != nil {
 			msgCtx.Error = err
+			failedContexts = append(failedContexts, msgCtx)
 			continue
 		}
 
@@ -136,12 +137,14 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			newEtag, err := w.YoutubeService.GetImageEtag(oEmbedVideo.ThumbnailURL)
 			if err != nil {
 				msgCtx.Error = err
+				failedContexts = append(failedContexts, msgCtx)
 				continue
 			}
 
 			err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
 			if err != nil {
 				msgCtx.Error = err
+				failedContexts = append(failedContexts, msgCtx)
 				continue
 			}
 
@@ -154,29 +157,14 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 				continue
 			}
 
-			videoData := models.ClickhouseVideo{
-				VideoID:           videoID,
-				YoutubeID:         youtubeID,
-				SnapshotTime:      time.Now(),
-				Title:             oEmbedVideo.Title,
-				ImageSrc:          oEmbedVideo.ThumbnailURL,
-				Link:              url,
-				TitleHash:         newTitleHash,
-				ImageEtag:         newEtag,
-				ImageFileID:       imageData.FileId,
-				ImageFilename:     imageData.Name,
-				ImageURL:          imageData.Url,
-				ImageThumbnailURL: imageData.ThumbnailUrl,
-				ImageHeight:       int32(imageData.Height),
-				ImageWidth:        int32(imageData.Width),
-				ImageSize:         imageData.Size,
-				ImageFilepath:     imageData.FilePath,
-				CreatedAt:         time.Now(),
-			}
+			videoData := buildSnapshot(
+				videoID, youtubeID, url, oEmbedVideo, newTitleHash,
+				imageFieldsFromUpload(newEtag, imageData), time.Now(),
+			)
 
 			msgCtx.VideoData = &videoData
 			sucessfulVideos = append(sucessfulVideos, videoData)
-			successfulMessageIDs = append(successfulMessageIDs, message.ID)
+			successfulContexts = append(successfulContexts, msgCtx)
 
 			continue
 		}
@@ -204,12 +192,12 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 			if newTitleHash == 0 {
 				// No changes (Image and title)
-				w.Logger.Printf("Acking message since no changes detected for video %s\n", youtubeID)
+				w.Logger.Debug("Acking message since no changes detected", "youtube_id", youtubeID)
 				err = w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, message.ID).Err()
 				if err != nil {
-					w.Logger.Printf("Failed to XACK message %s: %v\n", message.ID, err)
+					w.Logger.Error("Failed to XACK message", "message_id", message.ID, "err", err)
 				} else {
-					w.Logger.Printf("Successfully processed and acknowledged message: %s\n", message.ID)
+					w.Logger.Info("Successfully processed and acknowledged message", "message_id", message.ID)
 					w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+message.ID)
 				}
 				// successfulMessageIDs = append(successfulMessageIDs, message.ID)
@@ -273,27 +261,16 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 				continue
 			}
 
-			videoData := models.ClickhouseVideo{
-				VideoID:           chVideo.VideoID,
-				YoutubeID:         chVideo.YoutubeID,
-				SnapshotTime:      chVideo.SnapshotTime,
-				Title:             chVideo.Title,
-				ImageSrc:          chVideo.ImageThumbnailURL,
-				Link:              chVideo.ImageURL,
-				TitleHash:         newTitleHash,
-				ImageEtag:         chVideo.ImageEtag,
-				ImageFileID:       chVideo.ImageFileID,
-				ImageFilename:     chVideo.ImageFilename,
-				ImageURL:          chVideo.ImageURL,
-				ImageThumbnailURL: chVideo.ImageThumbnailURL,
-				ImageHeight:       chVideo.ImageHeight,
-				ImageWidth:        chVideo.ImageWidth,
-				ImageSize:         chVideo.ImageSize,
-				ImageFilepath:     chVideo.ImageFilepath,
-				CreatedAt:         chVideo.CreatedAt,
-			}
+			// The thumbnail is unchanged, so the previous snapshot's ImageKit asset
+			// is the right one
+			videoData := buildSnapshot(
+				videoID, youtubeID, url, oEmbedVideo, newTitleHash,
+				imageFieldsFromSnapshot(chVideo), time.Now(),
+			)
 
+			msgCtx.VideoData = &videoData
 			sucessfulVideos = append(sucessfulVideos, videoData)
+			successfulContexts = append(successfulContexts, msgCtx)
 			continue
 		}
 		// Image and Title changed
@@ -304,46 +281,35 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			continue
 		}
 
-		videoData := models.ClickhouseVideo{
-			VideoID:           videoID,
-			YoutubeID:         youtubeID,
-			SnapshotTime:      time.Now(),
-			Title:             oEmbedVideo.Title,
-			ImageSrc:          oEmbedVideo.ThumbnailURL,
-			Link:              url,
-			TitleHash:         newTitleHash,
-			ImageEtag:         newImageEtag,
-			ImageFileID:       imageData.FileId,
-			ImageFilename:     imageData.Name,
-			ImageURL:          imageData.Url,
-			ImageThumbnailURL: imageData.ThumbnailUrl,
-			ImageHeight:       int32(imageData.Height),
-			ImageWidth:        int32(imageData.Width),
-			ImageSize:         imageData.Size,
-			ImageFilepath:     imageData.FilePath,
-			CreatedAt:         time.Now(),
-		}
+		videoData := buildSnapshot(
+			videoID, youtubeID, url, oEmbedVideo, newTitleHash,
+			imageFieldsFromUpload(newImageEtag, imageData), time.Now(),
+		)
 
 		msgCtx.VideoData = &videoData
 		sucessfulVideos = append(sucessfulVideos, videoData)
-		successfulMessageIDs = append(successfulMessageIDs, message.ID)
+		successfulContexts = append(successfulContexts, msgCtx)
 	}
 
-	if len(successfulMessageIDs) > 0 {
+	if len(successfulContexts) > 0 {
 		err := w.ClickhouseService.InsertVideos(sucessfulVideos)
 		if err != nil {
-			w.Logger.Printf("Failed to insert videos to ClickHouse: %v\n", err)
-			return
-		}
-
-		for _, msgID := range successfulMessageIDs {
-			err := w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, msgID).Err()
-			if err != nil {
-				w.Logger.Printf("Failed to XACK message %s: %v\n", msgID, err)
-			} else {
-				w.Logger.Printf("Successfully processed and acknowledged message ID: %s\n", msgID)
-				// Clean up retry counter
-				w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+msgID)
+			w.Logger.Error("Failed to insert videos to ClickHouse", "err", err)
+			for _, msgCtx := range successfulContexts {
+				msgCtx.Error = fmt.Errorf("clickhouse batch insert failed: %w", err)
+				failedContexts = append(failedContexts, msgCtx)
+			}
+		} else {
+			for _, msgCtx := range successfulContexts {
+				msgID := msgCtx.Message.ID
+				err := w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, msgID).Err()
+				if err != nil {
+					w.Logger.Error("Failed to XACK message", "message_id", msgID, "err", err)
+				} else {
+					w.Logger.Info("Successfully processed and acknowledged message", "message_id", msgID)
+					// Clean up retry counter
+					w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+msgID)
+				}
 			}
 		}
 	}
@@ -446,7 +412,7 @@ func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVide
 
 	titleChanged := newTitleHash != lastTitleHash && oEmbedVideo.Title != title
 	if titleChanged {
-		w.Logger.Printf("Title changed for video %s\n", videoID)
+		w.Logger.Info("Title changed for video", "video_id", videoID)
 		return newTitleHash, nil
 	}
 

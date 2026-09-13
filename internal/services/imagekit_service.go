@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,13 +12,13 @@ import (
 )
 
 type ImagekitService struct {
-	Logger         *log.Logger
+	Logger         *slog.Logger
 	Config         *config.Config
 	HttpClient     *http.Client
 	ImageKitClient *imagekit.ImageKit
 }
 
-func NewImagekitService(logger *log.Logger, config *config.Config, httpClient *http.Client, imageKitClient *imagekit.ImageKit) *ImagekitService {
+func NewImagekitService(logger *slog.Logger, config *config.Config, httpClient *http.Client, imageKitClient *imagekit.ImageKit) *ImagekitService {
 	return &ImagekitService{
 		Logger:         logger,
 		Config:         config,
@@ -45,7 +45,7 @@ func (is *ImagekitService) DownloadAndUploadImage(videoID, youtubeID, imageURL s
 		return uploader.UploadResult{}, fmt.Errorf("ImageKit upload failed: %s", uploadResp.ParseError())
 	}
 
-	is.Logger.Println("ImageKit upload successful")
+	is.Logger.Info("ImageKit upload successful", "video_id", videoID, "youtube_id", youtubeID)
 
 	return uploadResp.Data, nil
 }
