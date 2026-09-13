@@ -35,4 +35,4 @@ go.work
 /configs
 ./database/
 .env
-
+CLAUDE.md
