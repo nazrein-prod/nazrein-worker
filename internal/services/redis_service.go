@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -14,10 +14,10 @@ import (
 type RedisService struct {
 	Client *redis.Client
 	Config *config.Config
-	Logger *log.Logger
+	Logger *slog.Logger
 }
 
-func NewRedisService(logger *log.Logger, config *config.Config, client *redis.Client) *RedisService {
+func NewRedisService(logger *slog.Logger, config *config.Config, client *redis.Client) *RedisService {
 	return &RedisService{
 		Client: client,
 		Config: config,
@@ -40,8 +40,11 @@ func (rs *RedisService) LogPendingSummary() error {
 		return err
 	}
 
-	rs.Logger.Printf("Total pending: %d, smallest ID: %s, largest ID: %s\n",
-		summary.Count, summary.Lower, summary.Higher)
+	rs.Logger.Info("Pending messages summary",
+		"total", summary.Count,
+		"smallest_id", summary.Lower,
+		"largest_id", summary.Higher,
+	)
 
 	return nil
 }
@@ -95,21 +98,29 @@ func (rs *RedisService) HandleRetries(msgCtx models.MessageContext) {
 
 	err := rs.Client.Set(rs.Config.Ctx, retryKey, retryCount, 24*time.Hour).Err()
 	if err != nil {
-		rs.Logger.Printf("Failed to set retry count for message %s: %v\n", msgCtx.Message.ID, err)
+		rs.Logger.Error("Failed to set retry count for message", "message_id", msgCtx.Message.ID, "err", err)
 	}
 
 	// calc exponential backoff delay
 	backoffDelay := time.Duration(retryCount*retryCount) * time.Second
 
-	rs.Logger.Printf("Message %s failed (attempt %d/%d): %v. Retrying in %v\n",
-		msgCtx.Message.ID, retryCount, rs.Config.MaxRetries, msgCtx.Error, backoffDelay)
+	rs.Logger.Warn("Message failed, retrying",
+		"message_id", msgCtx.Message.ID,
+		"attempt", retryCount,
+		"max_retries", rs.Config.MaxRetries,
+		"err", msgCtx.Error,
+		"backoff", backoffDelay,
+	)
 
 	// we'll just not ack the message here so it gets reprocessed
 }
 
 func (rs *RedisService) HandleFailure(msgCtx models.MessageContext) {
-	fmt.Printf("Message %s exceeded max retries (%d). Moving to dead letter stream. Error: %v\n",
-		msgCtx.Message.ID, rs.Config.MaxRetries, msgCtx.Error)
+	rs.Logger.Error("Message exceeded max retries, moving to dead letter stream",
+		"message_id", msgCtx.Message.ID,
+		"max_retries", rs.Config.MaxRetries,
+		"err", msgCtx.Error,
+	)
 
 	deadLetterData := map[string]interface{}{
 		"original_stream":     rs.Config.StreamName,
@@ -129,15 +140,15 @@ func (rs *RedisService) HandleFailure(msgCtx models.MessageContext) {
 	}).Result()
 
 	if err != nil {
-		fmt.Printf("Failed to add message to dead letter stream: %v\n", err)
+		rs.Logger.Error("Failed to add message to dead letter stream", "message_id", msgCtx.Message.ID, "err", err)
 		return
 	}
 
 	err = rs.Client.XAck(rs.Config.Ctx, rs.Config.StreamName, rs.Config.GroupName, msgCtx.Message.ID).Err()
 	if err != nil {
-		rs.Logger.Printf("Failed to XACK failed message %s: %v\n", msgCtx.Message.ID, err)
+		rs.Logger.Error("Failed to XACK failed message", "message_id", msgCtx.Message.ID, "err", err)
 	} else {
-		rs.Logger.Printf("Moved message %s to dead letter stream and acknowledged\n", msgCtx.Message.ID)
+		rs.Logger.Info("Moved message to dead letter stream and acknowledged", "message_id", msgCtx.Message.ID)
 	}
 
 	rs.Client.Del(rs.Config.Ctx, rs.Config.RetryKeyPrefix+msgCtx.Message.ID)

@@ -3,14 +3,14 @@ package app
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/grvbrk/nazrein_worker/internal/config"
 	"github.com/grvbrk/nazrein_worker/internal/db"
+	applogger "github.com/grvbrk/nazrein_worker/internal/logger"
 	"github.com/grvbrk/nazrein_worker/internal/models"
 	"github.com/grvbrk/nazrein_worker/internal/services"
 	"github.com/grvbrk/nazrein_worker/internal/utils"
@@ -19,7 +19,7 @@ import (
 )
 
 type Worker struct {
-	Logger            *log.Logger
+	Logger            *slog.Logger
 	ImageKit          *imagekit.ImageKit
 	RedisClient       *redis.Client
 	ClickhouseClient  driver.Conn
@@ -32,24 +32,24 @@ type Worker struct {
 }
 
 func NewWorker() (*Worker, error) {
-	logger := log.New(os.Stdout, "LOGGING: ", log.Ldate|log.Ltime)
+	logger := applogger.New("worker")
 	config := config.NewConfig()
 
 	imageKitClient, err := db.ConnectImageKit()
 	if err != nil {
-		fmt.Println("Error connecting to ImageKit:", err)
+		logger.Error("Error connecting to ImageKit", "err", err)
 		return nil, err
 	}
 
 	redisClient, err := db.ConnectRedis()
 	if err != nil {
-		fmt.Println("Error connecting to Redis:", err)
+		logger.Error("Error connecting to Redis", "err", err)
 		return nil, err
 	}
 
 	chConn, err := db.ConnectClickhouse()
 	if err != nil {
-		fmt.Println("Error connecting to Clickhouse:", err)
+		logger.Error("Error connecting to Clickhouse", "err", err)
 		return nil, err
 	}
 
@@ -192,12 +192,12 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 			if newTitleHash == 0 {
 				// No changes (Image and title)
-				w.Logger.Printf("Acking message since no changes detected for video %s\n", youtubeID)
+				w.Logger.Debug("Acking message since no changes detected", "youtube_id", youtubeID)
 				err = w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, message.ID).Err()
 				if err != nil {
-					w.Logger.Printf("Failed to XACK message %s: %v\n", message.ID, err)
+					w.Logger.Error("Failed to XACK message", "message_id", message.ID, "err", err)
 				} else {
-					w.Logger.Printf("Successfully processed and acknowledged message: %s\n", message.ID)
+					w.Logger.Info("Successfully processed and acknowledged message", "message_id", message.ID)
 					w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+message.ID)
 				}
 				// successfulMessageIDs = append(successfulMessageIDs, message.ID)
@@ -294,7 +294,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 	if len(successfulContexts) > 0 {
 		err := w.ClickhouseService.InsertVideos(sucessfulVideos)
 		if err != nil {
-			w.Logger.Printf("Failed to insert videos to ClickHouse: %v\n", err)
+			w.Logger.Error("Failed to insert videos to ClickHouse", "err", err)
 			for _, msgCtx := range successfulContexts {
 				msgCtx.Error = fmt.Errorf("clickhouse batch insert failed: %w", err)
 				failedContexts = append(failedContexts, msgCtx)
@@ -304,9 +304,9 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 				msgID := msgCtx.Message.ID
 				err := w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, msgID).Err()
 				if err != nil {
-					w.Logger.Printf("Failed to XACK message %s: %v\n", msgID, err)
+					w.Logger.Error("Failed to XACK message", "message_id", msgID, "err", err)
 				} else {
-					w.Logger.Printf("Successfully processed and acknowledged message ID: %s\n", msgID)
+					w.Logger.Info("Successfully processed and acknowledged message", "message_id", msgID)
 					// Clean up retry counter
 					w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+msgID)
 				}
@@ -412,7 +412,7 @@ func (w *Worker) DidTitleChange(videoID string, oEmbedVideo *models.OembedYTVide
 
 	titleChanged := newTitleHash != lastTitleHash && oEmbedVideo.Title != title
 	if titleChanged {
-		w.Logger.Printf("Title changed for video %s\n", videoID)
+		w.Logger.Info("Title changed for video", "video_id", videoID)
 		return newTitleHash, nil
 	}
 

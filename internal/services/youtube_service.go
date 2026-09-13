@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 
@@ -15,12 +15,12 @@ import (
 )
 
 type YoutubeService struct {
-	Logger     *log.Logger
+	Logger     *slog.Logger
 	Config     *config.Config
 	HttpClient *http.Client
 }
 
-func NewYoutubeService(logger *log.Logger, config *config.Config, httpClient *http.Client) *YoutubeService {
+func NewYoutubeService(logger *slog.Logger, config *config.Config, httpClient *http.Client) *YoutubeService {
 	return &YoutubeService{
 		Logger:     logger,
 		Config:     config,
@@ -38,7 +38,7 @@ func (ys *YoutubeService) GetVideoDetails(videoURL string) (*models.OembedYTVide
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			ys.Logger.Printf("failed to close oEmbed response body: %v", err)
+			ys.Logger.Warn("failed to close oEmbed response body", "err", err)
 		}
 	}()
 
@@ -64,7 +64,7 @@ func (ys *YoutubeService) DownloadAndMD5HashImage(imageURL string) (string, erro
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			ys.Logger.Printf("failed to close imageurl (for md5) client: %v", err)
+			ys.Logger.Warn("failed to close imageurl (for md5) client", "err", err)
 		}
 	}()
 
@@ -90,7 +90,7 @@ func (ys *YoutubeService) GetImageEtag(imageURL string) (string, error) {
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			ys.Logger.Printf("failed to close imageurl (for etag) client: %v", err)
+			ys.Logger.Warn("failed to close imageurl (for etag) client", "err", err)
 		}
 	}()
 
