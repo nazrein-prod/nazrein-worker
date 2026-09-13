@@ -81,7 +81,7 @@ func NewWorker() (*Worker, error) {
 func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 
 	var sucessfulVideos []models.ClickhouseVideo
-	var successfulMessageIDs []string
+	var successfulContexts []models.MessageContext
 	var failedContexts []models.MessageContext
 
 	for _, message := range messages {
@@ -127,6 +127,7 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 		exists, err := w.CheckFirstUpload(videoID, oEmbedVideo)
 		if err != nil {
 			msgCtx.Error = err
+			failedContexts = append(failedContexts, msgCtx)
 			continue
 		}
 
@@ -136,12 +137,14 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			newEtag, err := w.YoutubeService.GetImageEtag(oEmbedVideo.ThumbnailURL)
 			if err != nil {
 				msgCtx.Error = err
+				failedContexts = append(failedContexts, msgCtx)
 				continue
 			}
 
 			err = w.RedisClient.Set(w.Config.Ctx, cacheKey, newEtag, w.Config.ImageEtagTTL).Err()
 			if err != nil {
 				msgCtx.Error = err
+				failedContexts = append(failedContexts, msgCtx)
 				continue
 			}
 
@@ -154,29 +157,14 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 				continue
 			}
 
-			videoData := models.ClickhouseVideo{
-				VideoID:           videoID,
-				YoutubeID:         youtubeID,
-				SnapshotTime:      time.Now(),
-				Title:             oEmbedVideo.Title,
-				ImageSrc:          oEmbedVideo.ThumbnailURL,
-				Link:              url,
-				TitleHash:         newTitleHash,
-				ImageEtag:         newEtag,
-				ImageFileID:       imageData.FileId,
-				ImageFilename:     imageData.Name,
-				ImageURL:          imageData.Url,
-				ImageThumbnailURL: imageData.ThumbnailUrl,
-				ImageHeight:       int32(imageData.Height),
-				ImageWidth:        int32(imageData.Width),
-				ImageSize:         imageData.Size,
-				ImageFilepath:     imageData.FilePath,
-				CreatedAt:         time.Now(),
-			}
+			videoData := buildSnapshot(
+				videoID, youtubeID, url, oEmbedVideo, newTitleHash,
+				imageFieldsFromUpload(newEtag, imageData), time.Now(),
+			)
 
 			msgCtx.VideoData = &videoData
 			sucessfulVideos = append(sucessfulVideos, videoData)
-			successfulMessageIDs = append(successfulMessageIDs, message.ID)
+			successfulContexts = append(successfulContexts, msgCtx)
 
 			continue
 		}
@@ -273,27 +261,16 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 				continue
 			}
 
-			videoData := models.ClickhouseVideo{
-				VideoID:           chVideo.VideoID,
-				YoutubeID:         chVideo.YoutubeID,
-				SnapshotTime:      chVideo.SnapshotTime,
-				Title:             chVideo.Title,
-				ImageSrc:          chVideo.ImageThumbnailURL,
-				Link:              chVideo.ImageURL,
-				TitleHash:         newTitleHash,
-				ImageEtag:         chVideo.ImageEtag,
-				ImageFileID:       chVideo.ImageFileID,
-				ImageFilename:     chVideo.ImageFilename,
-				ImageURL:          chVideo.ImageURL,
-				ImageThumbnailURL: chVideo.ImageThumbnailURL,
-				ImageHeight:       chVideo.ImageHeight,
-				ImageWidth:        chVideo.ImageWidth,
-				ImageSize:         chVideo.ImageSize,
-				ImageFilepath:     chVideo.ImageFilepath,
-				CreatedAt:         chVideo.CreatedAt,
-			}
+			// The thumbnail is unchanged, so the previous snapshot's ImageKit asset
+			// is the right one
+			videoData := buildSnapshot(
+				videoID, youtubeID, url, oEmbedVideo, newTitleHash,
+				imageFieldsFromSnapshot(chVideo), time.Now(),
+			)
 
+			msgCtx.VideoData = &videoData
 			sucessfulVideos = append(sucessfulVideos, videoData)
+			successfulContexts = append(successfulContexts, msgCtx)
 			continue
 		}
 		// Image and Title changed
@@ -304,46 +281,35 @@ func (w *Worker) ProcessMessages(messages []redis.XMessage) {
 			continue
 		}
 
-		videoData := models.ClickhouseVideo{
-			VideoID:           videoID,
-			YoutubeID:         youtubeID,
-			SnapshotTime:      time.Now(),
-			Title:             oEmbedVideo.Title,
-			ImageSrc:          oEmbedVideo.ThumbnailURL,
-			Link:              url,
-			TitleHash:         newTitleHash,
-			ImageEtag:         newImageEtag,
-			ImageFileID:       imageData.FileId,
-			ImageFilename:     imageData.Name,
-			ImageURL:          imageData.Url,
-			ImageThumbnailURL: imageData.ThumbnailUrl,
-			ImageHeight:       int32(imageData.Height),
-			ImageWidth:        int32(imageData.Width),
-			ImageSize:         imageData.Size,
-			ImageFilepath:     imageData.FilePath,
-			CreatedAt:         time.Now(),
-		}
+		videoData := buildSnapshot(
+			videoID, youtubeID, url, oEmbedVideo, newTitleHash,
+			imageFieldsFromUpload(newImageEtag, imageData), time.Now(),
+		)
 
 		msgCtx.VideoData = &videoData
 		sucessfulVideos = append(sucessfulVideos, videoData)
-		successfulMessageIDs = append(successfulMessageIDs, message.ID)
+		successfulContexts = append(successfulContexts, msgCtx)
 	}
 
-	if len(successfulMessageIDs) > 0 {
+	if len(successfulContexts) > 0 {
 		err := w.ClickhouseService.InsertVideos(sucessfulVideos)
 		if err != nil {
 			w.Logger.Printf("Failed to insert videos to ClickHouse: %v\n", err)
-			return
-		}
-
-		for _, msgID := range successfulMessageIDs {
-			err := w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, msgID).Err()
-			if err != nil {
-				w.Logger.Printf("Failed to XACK message %s: %v\n", msgID, err)
-			} else {
-				w.Logger.Printf("Successfully processed and acknowledged message ID: %s\n", msgID)
-				// Clean up retry counter
-				w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+msgID)
+			for _, msgCtx := range successfulContexts {
+				msgCtx.Error = fmt.Errorf("clickhouse batch insert failed: %w", err)
+				failedContexts = append(failedContexts, msgCtx)
+			}
+		} else {
+			for _, msgCtx := range successfulContexts {
+				msgID := msgCtx.Message.ID
+				err := w.RedisClient.XAck(w.Config.Ctx, w.Config.StreamName, w.Config.GroupName, msgID).Err()
+				if err != nil {
+					w.Logger.Printf("Failed to XACK message %s: %v\n", msgID, err)
+				} else {
+					w.Logger.Printf("Successfully processed and acknowledged message ID: %s\n", msgID)
+					// Clean up retry counter
+					w.RedisClient.Del(w.Config.Ctx, w.Config.RetryKeyPrefix+msgID)
+				}
 			}
 		}
 	}
