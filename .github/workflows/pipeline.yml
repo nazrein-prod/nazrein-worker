@@ -7,34 +7,38 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: "1.23.x"
-
-      - name: Deps cache
-        id: cache-go-deps
-        uses: actions/cache@v4
-        env:
-          cache-name: go-deps-cache
-        with:
-          path: ~/godeps
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-
-      - if: ${{ steps.cache-go-deps.outputs.cache-hit != 'true' }}
-        name: List the state of go modules
-        continue-on-error: true
-        run: go mod graph
+          go-version: "1.27.x"
 
       - name: Install dependencies
         run: |
-          go mod tidy
           go mod download
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.63.4
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+
+      - name: Verify go.mod is tidy
+        run: |
+          cp go.mod go.mod.bak && cp go.sum go.sum.bak
+          go mod tidy
+          if ! diff -q go.mod go.mod.bak >/dev/null || ! diff -q go.sum go.sum.bak >/dev/null; then
+            echo "::error::go.mod/go.sum are not tidy. Run 'go mod tidy' and commit the result."
+            diff go.mod.bak go.mod || true
+            diff go.sum.bak go.sum || true
+            exit 1
+          fi
+          rm go.mod.bak go.sum.bak
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Run golangci-lint
         run: golangci-lint run
@@ -48,7 +52,7 @@ jobs:
     needs: lint
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
