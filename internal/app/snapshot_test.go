@@ -155,7 +155,20 @@ func TestHashString_DistinguishesTitles(t *testing.T) {
 	if utils.HashString("The old title") == utils.HashString("A brand new title") {
 		t.Error("different titles hashed to the same value")
 	}
-	if utils.HashString("stable") != utils.HashString("stable") {
-		t.Error("HashString is not deterministic")
+}
+
+func TestHashString_IsStableAcrossBuilds(t *testing.T) {
+	golden := map[string]uint64{
+		"":                  14695981039346656037,
+		"stable":            4567693929835203094,
+		"The old title":     14924083897073040779,
+		"A brand new title": 11321413253025038493,
+	}
+
+	for input, want := range golden {
+		if got := utils.HashString(input); got != want {
+			t.Errorf("HashString(%q) = %d, want %d — the hash algorithm changed, which invalidates every title_hash in ClickHouse",
+				input, got, want)
+		}
 	}
 }

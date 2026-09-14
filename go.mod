@@ -1,6 +1,6 @@
 module github.com/grvbrk/nazrein_worker
 
-go 1.23.3
+go 1.27
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.37.2
